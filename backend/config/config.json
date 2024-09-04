@@ -1,0 +1,26 @@
+{
+  "development": {
+    "username": "postgres",
+    "password": "shad",
+    "database": "saas_rh_db",
+    "host": "127.0.0.1",
+    "dialect": "postgres",
+    "schema": "public"
+  },
+  "test": {
+    "username": "postgres",
+    "password": "shad",
+    "database": "saas_rh_db",
+    "host": "127.0.0.1",
+    "dialect": "postgres",
+    "schema": "public"
+  },
+  "production": {
+    "username": "postgres",
+    "password": "shad",
+    "database": "saas_rh_db",
+    "host": "127.0.0.1",
+    "dialect": "postgres",
+    "schema": "public"
+  }
+}
