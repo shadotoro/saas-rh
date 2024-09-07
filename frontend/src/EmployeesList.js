@@ -11,7 +11,7 @@ const EmployeesList = () => {
         const token = localStorage.getItem('token');
 
         // Récupérer la liste des employés depuis l'API backend
-        axios.get('http://localhost:3000/employees', {
+        axios.get('http://localhost:5000/employees', {
             headers: {
                 'x-auth-token': token  // Utiliser le token dans l'en-tête
             }
@@ -30,7 +30,7 @@ const EmployeesList = () => {
         const token = localStorage.getItem('token');
 
         // Envoyer une requête DELETE pour supprimer l'employé
-        axios.delete(`http://localhost:3000/employees/${id}`, {
+        axios.delete(`http://localhost:5000/employees/${id}`, {
             headers: {
                 'x-auth-token': token  // Utiliser le token dans l'en-tête
             }
