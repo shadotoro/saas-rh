@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -15,6 +16,23 @@ app.use(cors({
     credentials: true
 }));
 
+app.use((req, res, next) => {
+    console.log('Requête reçue:', req.method, req.path);
+    console.log('En-têtes:', req.headers);  // Afficher les en-têtes reçus
+    next();
+});
+
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-auth-token');
+    next();
+});
+
+// Middleware pour autoriser les requêtes OPTIONS
+app.options('*', cors());
+
+
 app.use(helmet());
 app.use(express.json());
 
@@ -27,36 +45,38 @@ app.post('/signup', [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: errors.array() });
     }
 
     try {
-    const { firstName, lastName, email, password } = req.body;
-    const existingUser = await User.findOne({ where: { email } });
+        const { firstName, lastName, email, password } = req.body;
+        const existingUser = await User.findOne({ where: { email } });
 
-    if (existingUser) {
-        return res.status(400).json({ message: "L'email est déjà utilisé" });
-    }
+        if (existingUser) {
+            return res.status(400).json({ message: "L'email est déjà utilisé" });
+        }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({
-        firstName,
-        lastName,
-        email,
-        passwordHash: hashedPassword
-    });
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = await User.create({
+            firstName,
+            lastName,
+            email,
+            passwordHash: hashedPassword
+        });
 
-    res.status(201).json({
-        id: newUser.id,
-        firstName: newUser.firstName,
-        lastName: newUser.lastName,
-        email: newUser.email,
-        message: "Utilisateur créé avec succès"
-    });
+        res.status(201).json({
+            id: newUser.id,
+            firstName: newUser.firstName,
+            lastName: newUser.lastName,
+            email: newUser.email,
+            message: "Utilisateur créé avec succès"
+        });
     } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la création de l'utilisateur", error });
+        console.log("Erreur lors de la création de l'utilisateur:", error);
+        res.status(500).json({ message: "Erreur lors de la création de l'utilisateur", error });
     }
 });
+
 
 // Route de connexion (login)
 app.post('/login', [
@@ -81,7 +101,12 @@ app.post('/login', [
         return res.status(400).json({ message: "Mot de passe incorrect" });
     }
 
-    const token = jwt.sign({ userId: user.id, email: user.email }, 'secretkey', { expiresIn: '1h' });
+    const token = jwt.sign(
+        { userId: user.id, email: user.email },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+    );
+    
 
     res.status(200).json({
         token,
@@ -99,51 +124,59 @@ app.post('/login', [
 });
 
 // Route pour créer un nouvel employé
-app.post('/employees', authMiddleware, async (req, res) => {
-console.log('Request Body:', req.body); // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! à supprimer !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+app.post('/employees',  async (req, res) => {
     try {
-    const { firstName, lastName, email, jobTitle, dateOfBirth } = req.body;
+        const { firstName, lastName, email, jobTitle, dateOfBirth } = req.body;
 
-    if (!firstName || !lastName || !email || !jobTitle || !dateOfBirth) {
-        return res.status(400).json({ message: "Tous les champs sont obligatoires" });
-    }
+        if (!firstName || !lastName || !email || !jobTitle || !dateOfBirth) {
+            console.log('Champs manquants:', req.body);  ////////////////////////////////////////////////
+            return res.status(400).json({ message: "Tous les champs sont obligatoires" });
+        }
 
-    const existingEmployee = await Employee.findOne({ where: { email } });
-    if (existingEmployee) {
-        return res.status(400).json({ message: "Un employé avec cet email existe déjà" });
-    }
+        const existingEmployee = await Employee.findOne({ where: { email } });
+        if (existingEmployee) {
+            console.log('Employé déjà existant:', existingEmployee);  //////////////////////////////////////
+            return res.status(400).json({ message: "Un employé avec cet email existe déjà" });
+        }
 
-    const newEmployee = await Employee.create({
-        firstName,
-        lastName,
-        email,
-        jobTitle,
-        dateOfBirth
-    });
+        const newEmployee = await Employee.create({
+            firstName,
+            lastName,
+            email,
+            jobTitle,
+            dateOfBirth
+        });
 
-    res.status(201).json({
-        id: newEmployee.id,
-        firstName: newEmployee.firstName,
-        lastName: newEmployee.lastName,
-        email: newEmployee.email,
-        jobTitle: newEmployee.jobTitle,
-        dateOfBirth: newEmployee.dateOfBirth,
-        message: "Employé créé avec succès"
-    });
+        console.log('Employé créé avec succès:', newEmployee);  /////////////////////////////////
+        res.status(201).json({
+            id: newEmployee.id,
+            firstName: newEmployee.firstName,
+            lastName: newEmployee.lastName,
+            email: newEmployee.email,
+            jobTitle: newEmployee.jobTitle,
+            dateOfBirth: newEmployee.dateOfBirth,
+            message: "Employé créé avec succès"
+        });
     } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la création de l'employé", error });
+        console.log('Erreur lors de la création de l\'employé:', error);  //////////////////////////////////////////
+        res.status(500).json({ message: "Erreur lors de la création de l'employé", error });
     }
 });
+
 
 // Route pour lister tous les employés
 app.get('/employees', authMiddleware, async (req, res) => {
+    console.log('Requête GET /employees reçue avec token utilisateur:', req.user);////////////////////////////////////
     try {
-    const employees = await Employee.findAll();
-    res.status(200).json(employees);
+        const employees = await Employee.findAll();
+        console.log('Employés récupérés:', employees);///////////////////////////////////////////
+        res.status(200).json(employees);
     } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la récupération des employés", error });
+        console.log('Erreur lors de la récupération des employés:', error); /////////////////////////////////////////
+        res.status(500).json({ message: 'Erreur lors de la récupération des employés', error });
     }
 });
+
 
 // Route pour obtenir les détails d'un employé spécifique
 app.get('/employees/:id', authMiddleware, async (req, res) => {
