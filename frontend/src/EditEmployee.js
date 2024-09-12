@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+
 const EditEmployee = () => {
     const { id } = useParams();  // Récupérer l'ID de l'employé à modifier
     const navigate = useNavigate();
@@ -12,41 +14,67 @@ const EditEmployee = () => {
         jobTitle: '',
         dateOfBirth: ''
     });
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
 
     useEffect(() => {
-        // Récupérer les détails de l'employé pour pré-remplir le formulaire
-        axios.get(`http://localhost:3000/employees/${id}`, {
-            headers: {
-                'x-auth-token': 'ton_token_jwt'
+        const fetchEmployee = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    throw new Error("Token d'authentification manquant");
+                }
+                const response = await axios.get(`${API_URL}/employees/${id}`, {
+                    headers: { 'x-auth-token': token }
+                });
+                setEmployee(response.data);
+            } catch (error) {
+                setError(`Erreur lors de la récupération des détails de l'employé: ${error.message}`);
+            } finally {
+                setLoading(false);
             }
-        })
-        .then(response => {
-            setEmployee(response.data);
-        })
-        .catch(error => {
-            console.error('Erreur lors de la récupération des détails de l\'employé:', error);
-        });
+        };
+        fetchEmployee();
     }, [id]);
 
     const handleChange = (e) => {
         setEmployee({ ...employee, [e.target.name]: e.target.value });
     };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-
-        axios.put(`http://localhost:3000/employees/${id}`, employee, {
-            headers: {
-                'x-auth-token': 'ton_token_jwt'
-            }
-        })
-        .then(() => {
-            navigate('/employees');  // Rediriger vers la liste des employés après mise à jour
-        })
-        .catch(error => {
-            console.error('Erreur lors de la mise à jour de l\'employé:', error);
-        });
+    const validateForm = () => {
+        if (!employee.email.includes('@')) {
+            setError('Adresse e-mail invalide');
+            return false;
+        }
+        // Ajoutez d'autres validations si nécessaire
+        return true;
     };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!validateForm()) return;
+
+        setLoading(true);
+        setError('');
+
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                throw new Error("Token d'authentification manquant");
+            }
+            await axios.put(`${API_URL}/employees/${id}`, employee, {
+                headers: { 'x-auth-token': token }
+            });
+            navigate('/employees');
+        } catch (error) {
+            setError(`Erreur lors de la mise à jour de l'employé: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) return <div className="text-center mt-10">Chargement...</div>;
+    if (error) return <div className="text-center mt-10 text-red-500">{error}</div>;
 
     return (
         <div className="container mx-auto mt-10 max-w-4xl p-6 bg-white shadow-lg rounded-lg">
@@ -107,7 +135,15 @@ const EditEmployee = () => {
                         required
                     />
                 </div>
-                <button type="submit" className="bg-blue-500 text-white p-2 rounded">Modifier</button>
+                <div className="md:col-span-2 flex justify-end">
+                    <button 
+                        type="submit" 
+                        className="bg-blue-500 text-white p-2 rounded"
+                        disabled={loading}
+                    >
+                        {loading ? 'Mise à jour...' : 'Modifier'}
+                    </button>
+                </div>
             </form>
         </div>
     );

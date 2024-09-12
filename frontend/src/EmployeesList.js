@@ -9,11 +9,13 @@ const EmployeesList = () => {
     useEffect(() => {
         // Récupérer le token JWT du localStorage
         const token = localStorage.getItem('token');
+console.log('Token utilisé pour la requête GET:', token); ///////////////// à supprimer ///////////////////////////
 
         // Récupérer la liste des employés depuis l'API backend
         axios.get('http://localhost:5000/employees', {
             headers: {
-                'x-auth-token': token  // Utiliser le token dans l'en-tête
+                'x-auth-token': token,
+                'Content-Type': 'application/json'  // Utiliser le token dans l'en-tête
             }
         })
         .then(response => {
