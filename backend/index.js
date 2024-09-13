@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const { check, validationResult } = require('express-validator');
 const { User, Employee } = require('./models');
 const authMiddleware = require('./middlewares/auth');
+const checkRole = require('./middlewares/checkRole');
+const devAuthMiddleware = require('./middlewares/devAuthMiddleware');
 
 const app = express();
 
@@ -32,9 +34,13 @@ app.use((req, res, next) => {
 // Middleware pour autoriser les requêtes OPTIONS
 app.options('*', cors());
 
-
 app.use(helmet());
 app.use(express.json());
+
+if (process.env.NODE_ENV === 'development') {
+    app.use(devAuthMiddleware);
+    console.log('Mode développement : connexion automatique en tant qu\'admin');
+}
 
 // Route d'enregistrement (signup)
 app.post('/signup', [
@@ -77,7 +83,6 @@ app.post('/signup', [
     }
 });
 
-
 // Route de connexion (login)
 app.post('/login', [
     check('email', 'Veuillez entrer un email valide').isEmail(),
@@ -85,46 +90,51 @@ app.post('/login', [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: errors.array() });
     }
 
     try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ where: { email } });
+        const { email, password } = req.body;
+        const user = await User.findOne({ where: { email } });
 
-    if (!user) {
-        return res.status(400).json({ message: "Utilisateur non trouvé" });
-    }
+        if (!user) {
+            return res.status(400).json({ message: "Utilisateur non trouvé" });
+        }
 
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!isMatch) {
-        return res.status(400).json({ message: "Mot de passe incorrect" });
-    }
+        const isMatch = await bcrypt.compare(password, user.passwordHash);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Mot de passe incorrect" });
+        }
 
-    const token = jwt.sign(
-        { userId: user.id, email: user.email },
-        process.env.JWT_SECRET,
-        { expiresIn: '1h' }
-    );
-    
+        const token = jwt.sign(
+            { userId: user.id, email: user.email },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
 
-    res.status(200).json({
-        token,
-        user: {
-            id: user.id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email
-        },
-        message: "Connexion réussie"
-    });
+        res.status(200).json({
+            token,
+            user: {
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email
+            },
+            message: "Connexion réussie"
+        });
     } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la connexion", error });
+        res.status(500).json({ message: "Erreur lors de la connexion", error });
     }
 });
 
 // Route pour créer un nouvel employé
-app.post('/employees',  async (req, res) => {
+app.post('/employees', authMiddleware, checkRole(['admin', 'hr_manager']), [
+    check('firstName', 'Le prénom est obligatoire').not().isEmpty(),
+    check('lastName', 'Le nom de famille est obligatoire').not().isEmpty(),
+    check('email', 'Veuillez entrer un email valide').isEmail(),
+    check('jobTitle', 'Le titre du poste est obligatoire').not().isEmpty(),
+    check('dateOfBirth', 'La date de naissance est obligatoire').isISO8601().toDate()
+], async (req, res) => {
     try {
         const { firstName, lastName, email, jobTitle, dateOfBirth } = req.body;
 
@@ -163,9 +173,8 @@ app.post('/employees',  async (req, res) => {
     }
 });
 
-
 // Route pour lister tous les employés
-app.get('/employees', authMiddleware, async (req, res) => {
+app.get('/employees', authMiddleware, checkRole(['admin', 'hr_manager', 'hr_staff']), async (req, res) => {
     console.log('Requête GET /employees reçue avec token utilisateur:', req.user);////////////////////////////////////
     try {
         const employees = await Employee.findAll();
@@ -177,56 +186,83 @@ app.get('/employees', authMiddleware, async (req, res) => {
     }
 });
 
-
 // Route pour obtenir les détails d'un employé spécifique
 app.get('/employees/:id', authMiddleware, async (req, res) => {
     try {
-    const employee = await Employee.findByPk(req.params.id);
-    if (!employee) {
-        return res.status(404).json({ message: "Employé non trouvé" });
-    }
-    res.status(200).json(employee);
+        const employee = await Employee.findByPk(req.params.id);
+        if (!employee) {
+            return res.status(404).json({ message: "Employé non trouvé" });
+        }
+        res.status(200).json(employee);
     } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la récupération des informations de l'employé", error });
+        res.status(500).json({ message: "Erreur lors de la récupération des informations de l'employé", error });
     }
 });
 
 // Route pour mettre à jour un employé
 app.put('/employees/:id', authMiddleware, async (req, res) => {
     try {
-    const { firstName, lastName, email, jobTitle, dateOfBirth } = req.body;
-    const employee = await Employee.findByPk(req.params.id);
+        const { firstName, lastName, email, jobTitle, dateOfBirth } = req.body;
+        const employee = await Employee.findByPk(req.params.id);
 
-    if (!employee) {
-        return res.status(404).json({ message: "Employé non trouvé" });
-    }
+        if (!employee) {
+            return res.status(404).json({ message: "Employé non trouvé" });
+        }
 
-    employee.firstName = firstName || employee.firstName;
-    employee.lastName = lastName || employee.lastName;
-    employee.email = email || employee.email;
-    employee.jobTitle = jobTitle || employee.jobTitle;
-    employee.dateOfBirth = dateOfBirth || employee.dateOfBirth;
+        employee.firstName = firstName || employee.firstName;
+        employee.lastName = lastName || employee.lastName;
+        employee.email = email || employee.email;
+        employee.jobTitle = jobTitle || employee.jobTitle;
+        employee.dateOfBirth = dateOfBirth || employee.dateOfBirth;
 
-    await employee.save();
+        await employee.save();
 
-    res.status(200).json({ message: "Employé mis à jour avec succès", employee });
+        res.status(200).json({ message: "Employé mis à jour avec succès", employee });
     } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la mise à jour de l'employé", error });
+        res.status(500).json({ message: "Erreur lors de la mise à jour de l'employé", error });
     }
 });
 
 // Route pour supprimer un employé
 app.delete('/employees/:id', authMiddleware, async (req, res) => {
     try {
-    const employee = await Employee.findByPk(req.params.id);
-    if (!employee) {
-        return res.status(404).json({ message: "Employé non trouvé" });
+        const employee = await Employee.findByPk(req.params.id);
+        if (!employee) {
+            return res.status(404).json({ message: "Employé non trouvé" });
+        }
+
+        await employee.destroy();
+        res.status(200).json({ message: "Employé supprimé avec succès" });
+    } catch (error) {
+        res.status(500).json({ message: "Erreur lors de la suppression de l'employé", error });
+    }
+});
+
+// Route pour mettre à jour le rôle d'un utilisateur (réservée aux admins)
+app.put('/users/:id/role', authMiddleware, checkRole(['admin']), [
+    check('role', 'Le rôle doit être admin, hr_manager ou hr_staff').isIn(['admin', 'hr_manager', 'hr_staff'])
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
     }
 
-    await employee.destroy();
-    res.status(200).json({ message: "Employé supprimé avec succès" });
+    try {
+        const { id } = req.params;
+        const { role } = req.body;
+
+        const user = await User.findByPk(id);
+        if (!user) {
+            return res.status(404).json({ message: "Utilisateur non trouvé" });
+        }
+
+        user.role = role;
+        await user.save();
+
+        res.json({ message: "Rôle de l'utilisateur mis à jour avec succès", user });
     } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la suppression de l'employé", error });
+        console.error('Erreur lors de la mise à jour du rôle:', error);
+        res.status(500).json({ message: "Erreur lors de la mise à jour du rôle de l'utilisateur" });
     }
 });
 
