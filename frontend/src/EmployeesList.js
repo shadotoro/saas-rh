@@ -12,7 +12,7 @@ const EmployeesList = () => {
 console.log('Token utilisé pour la requête GET:', token); ///////////////// à supprimer ///////////////////////////
 
         // Récupérer la liste des employés depuis l'API backend
-        axios.get('http://localhost:5000/employees', {
+        axios.get('/employees', {
             headers: {
                 'x-auth-token': token,
                 'Content-Type': 'application/json'  // Utiliser le token dans l'en-tête
@@ -32,7 +32,7 @@ console.log('Token utilisé pour la requête GET:', token); ///////////////// à
         const token = localStorage.getItem('token');
 
         // Envoyer une requête DELETE pour supprimer l'employé
-        axios.delete(`http://localhost:5000/employees/${id}`, {
+        axios.delete(`/employees/${id}`, {
             headers: {
                 'x-auth-token': token  // Utiliser le token dans l'en-tête
             }

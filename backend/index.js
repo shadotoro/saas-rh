@@ -9,18 +9,27 @@ const { User, Employee } = require('./models');
 const authMiddleware = require('./middlewares/auth');
 const checkRole = require('./middlewares/checkRole');
 const devAuthMiddleware = require('./middlewares/devAuthMiddleware');
+const { Sequelize, Op } = require('sequelize');
 
 const app = express();
 
 // Activer CORS pour les requêtes provenant de localhost:3000 (frontend)
 app.use(cors({
-    origin: 'http://localhost:3000',
+    origin: function(origin, callback) {
+        const allowedOrigins = ['http://localhost:3000', 'http://localhost:3001'];
+        console.log('Origin de la requête:', origin);
+        if (!origin || allowedOrigins.some(allowedOrigin => origin.startsWith(allowedOrigin))) {
+        callback(null, true);
+        } else {
+        callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
 }));
 
 app.use((req, res, next) => {
     console.log('Requête reçue:', req.method, req.path);
-    console.log('En-têtes:', req.headers);  // Afficher les en-têtes reçus
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
     next();
 });
 
@@ -128,27 +137,9 @@ app.post('/login', [
 });
 
 // Route pour créer un nouvel employé
-app.post('/employees', authMiddleware, checkRole(['admin', 'hr_manager']), [
-    check('firstName', 'Le prénom est obligatoire').not().isEmpty(),
-    check('lastName', 'Le nom de famille est obligatoire').not().isEmpty(),
-    check('email', 'Veuillez entrer un email valide').isEmail(),
-    check('jobTitle', 'Le titre du poste est obligatoire').not().isEmpty(),
-    check('dateOfBirth', 'La date de naissance est obligatoire').isISO8601().toDate()
-], async (req, res) => {
+app.post('/employees', authMiddleware, async (req, res) => {
     try {
         const { firstName, lastName, email, jobTitle, dateOfBirth } = req.body;
-
-        if (!firstName || !lastName || !email || !jobTitle || !dateOfBirth) {
-            console.log('Champs manquants:', req.body);  ////////////////////////////////////////////////
-            return res.status(400).json({ message: "Tous les champs sont obligatoires" });
-        }
-
-        const existingEmployee = await Employee.findOne({ where: { email } });
-        if (existingEmployee) {
-            console.log('Employé déjà existant:', existingEmployee);  //////////////////////////////////////
-            return res.status(400).json({ message: "Un employé avec cet email existe déjà" });
-        }
-
         const newEmployee = await Employee.create({
             firstName,
             lastName,
@@ -156,20 +147,10 @@ app.post('/employees', authMiddleware, checkRole(['admin', 'hr_manager']), [
             jobTitle,
             dateOfBirth
         });
-
-        console.log('Employé créé avec succès:', newEmployee);  /////////////////////////////////
-        res.status(201).json({
-            id: newEmployee.id,
-            firstName: newEmployee.firstName,
-            lastName: newEmployee.lastName,
-            email: newEmployee.email,
-            jobTitle: newEmployee.jobTitle,
-            dateOfBirth: newEmployee.dateOfBirth,
-            message: "Employé créé avec succès"
-        });
+        res.status(201).json(newEmployee);
     } catch (error) {
-        console.log('Erreur lors de la création de l\'employé:', error);  //////////////////////////////////////////
-        res.status(500).json({ message: "Erreur lors de la création de l'employé", error });
+        console.error('Erreur lors de la création de l\'employé:', error);
+        res.status(500).json({ message: "Erreur lors de la création de l'employé", error: error.message });
     }
 });
 
@@ -266,8 +247,66 @@ app.put('/users/:id/role', authMiddleware, checkRole(['admin']), [
     }
 });
 
+app.get('/api/dashboard-stats', authMiddleware, async (req, res) => {
+    try {
+        const totalEmployees = await Employee.count();
+
+        const thirtyDaysAgo = new Date(new Date().setDate(new Date().getDate() - 30));
+        const newHires = await Employee.count({
+            where: {
+                createdAt: {
+                    [Op.gte]: thirtyDaysAgo
+                }
+            }
+        });
+
+        const today = new Date();
+        const thirtyDaysLater = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+    
+        const upcomingBirthdays = await Employee.findAll({
+            attributes: ['firstName', 'lastName', 'dateOfBirth'],
+            where: {
+                dateOfBirth: {
+                    [Op.and]: [
+                        Sequelize.where(Sequelize.fn('date_part', 'month', Sequelize.col('dateOfBirth')), {
+                            [Op.in]: [today.getMonth() + 1, (today.getMonth() + 1) % 12 + 1]
+                            }),
+                            Sequelize.where(Sequelize.fn('date_part', 'day', Sequelize.col('dateOfBirth')), {
+                                [Op.between]: [today.getDate(), thirtyDaysLater.getDate()]
+                            })
+                        ]
+                    }
+                },
+                order: [
+                    [Sequelize.fn('date_part', 'month', Sequelize.col('dateOfBirth')), 'ASC'],
+                    [Sequelize.fn('date_part', 'day', Sequelize.col('dateOfBirth')), 'ASC']
+                    ]
+                });
+
+                const departmentDistribution = await Employee.findAll({
+                    attributes: ['department', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']],
+                    group: ['department']
+                });
+
+                res.json({
+                    totalEmployees,
+                    newHires,
+                    upcomingBirthdays: upcomingBirthdays.map(emp => ({
+                        name: `${emp.firstName} ${emp.lastName}`,
+                        date: emp.dateOfBirth.toISOString().split('T')[0]
+                    })),
+                    departmentDistribution: Object.fromEntries(
+                        departmentDistribution.map(dept => [dept.department, dept.get('count')])
+                    )
+                });
+                } catch (error) {
+                    console.error('Erreur lors de la récupération des statistiques:', error);
+                    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+                }
+        });
+
 // Lancer le serveur
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
